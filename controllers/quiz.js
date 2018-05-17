@@ -1,5 +1,6 @@
-const Sequelize = require("sequelize");
+const sequelize = require("sequelize");
 const {models} = require("../models");
+const operator = sequelize.Op;
 
 // Autoload the quiz with id equals to :quizId
 exports.load = (req, res, next, quizId) => {
@@ -64,7 +65,7 @@ exports.create = (req, res, next) => {
         req.flash('success', 'Quiz created successfully.');
     res.redirect('/quizzes/' + quiz.id);
 })
-.catch(Sequelize.ValidationError, error => {
+.catch(sequelize.ValidationError, error => {
         req.flash('error', 'There are errors in the form:');
     error.errors.forEach(({message}) => req.flash('error', message));
     res.render('quizzes/new', {quiz});
@@ -98,7 +99,7 @@ exports.update = (req, res, next) => {
         req.flash('success', 'Quiz edited successfully.');
     res.redirect('/quizzes/' + quiz.id);
 })
-.catch(Sequelize.ValidationError, error => {
+.catch(sequelize.ValidationError, error => {
         req.flash('error', 'There are errors in the form:');
     error.errors.forEach(({message}) => req.flash('error', message));
     res.render('quizzes/edit', {quiz});
@@ -109,6 +110,60 @@ exports.update = (req, res, next) => {
 });
 };
 
+
+let availableQuizzes;
+
+// GET /quizzes/randomplay
+exports.randomplay = (req, res, next) => {
+    if (!req.session.randomPlay) req.session.randomPlay = [];
+
+    models.quiz.count({where: {id: {[sequelize.Op.notIn]: req.session.randomPlay}}})
+        .then(count => {
+        if (count === 0) {
+        const score = req.session.randomPlay.length;
+        req.session.randomPlay = [];
+        res.render('quizzes/random_none', {//TODO este chunk se puede poner antes de resetar al array para no tener que crear/guarda score en const?
+            score: score
+        });
+    } else {
+        models.quiz.findAll()
+            .then(quizzes => quizzes.map(quiz => quiz.id))
+    .then(ids => ids.filter(id => req.session.randomPlay.indexOf(id) === -1))
+    .then(ids => ids[Math.floor(Math.random() * ids.length)])
+    .then(id => models.quiz.findById(id)
+            .then(quiz => {
+            res.render('quizzes/random_play', {
+                score: req.session.randomPlay.length,
+                quiz: quiz
+            }
+        );
+    })).catch(err => console.log(err))
+    .catch(err => console.log(err));
+    }
+})
+
+};
+
+// GET /quizzes/randomcheck/:quizId
+exports.randomcheck = (req, res, next) => {
+
+    const {quiz, query} = req;
+
+    const answer = query.answer || "";
+    const result = answer.toLowerCase().trim() === quiz.answer.toLowerCase().trim();
+    let lastScore = req.session.randomPlay.length;
+
+    result ? req.session.randomPlay.push(quiz.id) : req.session.randomPlay = [];
+
+    res.render('quizzes/random_result', {
+        answer,
+        quiz,
+        result,
+        score: result ? ++lastScore : lastScore
+    });
+
+
+};
 
 // DELETE /quizzes/:quizId
 exports.destroy = (req, res, next) => {
